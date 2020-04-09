@@ -1,7 +1,8 @@
 import sc2
 from sc2 import run_game, maps, Race, Difficulty
 from sc2.player import Bot, Computer
-from sc2.constants import *
+from sc2.constants import ZELOT, STALKER, NEXUS, PROBE, CYBERNETICSCORE
+import random
 
 class AleeksBot(sc2.BotAI):
     async def on_Step(self, iteration):
@@ -10,8 +11,9 @@ class AleeksBot(sc2.BotAI):
         await self.build_pylons()
         await self.build_assimilators()
         await self.expand()
-        await self.attack_buildings()
-        await self.attack_army()
+        await self.offensive_buildings()
+        await self.offensive_army()
+        await self.attack()
 
 
 
@@ -45,21 +47,39 @@ class AleeksBot(sc2.BotAI):
                 await self.expand_now()
 
 
-    async def attack_buildings(self):
+    async def offensive_buildings(self):
         if self.units(PYLON).ready.exists:
             pylon = self.units(PYLON).ready.random
-            if self.units(GATEWAY).ready.exists:
-                if not self.units(CYBERNETICSCORE):
-                    if self.can_afford(CYBERNETICSCORE) and not self.already_pending(CYBERNETICSCORE):
-                        await self.build(CYBERNETICSCORE, near=pylon)
-            else:
+            if self.units(GATEWAY).ready.exists and not self.units(CYBERNETICSCORE):
+                if self.can_afford(CYBERNETICSCORE) and not self.already_pending(CYBERNETICSCORE):
+                    await self.build(CYBERNETICSCORE, near=pylon)
+                    
+            elif len(self.units(GATEWAY)) < 3:
                 if self.can_afford(GATEWAY) and not self.already_pending(GATEWAY):
                     await self.build(GATEWAY, near = pylon)
                 
-    async def attack_army(self):
+    async def offensive_army(self):
         for gw in self.units(GATEWAY).ready.noqueue:
             if self.can_afford(STALKER) and self.supply_left > 0:
                 await self.do(gw.train(STALKER))
+
+    def find_target(self, state):
+        if len(self.known_enemy_units) > 0:
+            return random.choice(self.known_enemy_units)
+        elif len(self.cached_known_enemy_structures) > 0:
+            return random.choice(self.known_enemy_structures)
+        else:
+            return self.enemy_start_locations[0]
+
+    async def attack(self):
+        if self.untis(STALKER).amount > 15:
+            for s in self.units(STALKER).idle:
+                await self.do(s.attack(self.find_target(self.state)))
+
+        if self.units(STALKER).amount > 5:
+            if len(self.known_enemy_units) > 0:
+                for s in self.units(STALKER).idle:
+                    await self.do(s.attack(random.choice(self.known_enemy_units)))
 
 
 
