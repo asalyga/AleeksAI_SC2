@@ -10,20 +10,22 @@ class AleeksBot(sc2.BotAI):
         await self.build_pylons()
         await self.build_assimilators()
         await self.expand()
+        await self.attack_buildings()
+        await self.attack_army()
 
 
 
     async def build_workers(self):
         for nexus in self.units(nexus).ready.noqueue:
             if self.can_afford(nexus):
-                await self.do(nexus.train(probe))
+                await self.do(nexus.train(PROBE))
 
     async def build_pylons(self):
-        if self.supply_left<5 and not self.already_pending(pylon):
-            nexuses = self.units(nexus).ready
+        if self.supply_left<5 and not self.already_pending(PYLON):
+            nexuses = self.units(NEXUS).ready
             if nexuses.exists:
-                if self.can_afford(pyolon):
-                    await self.build(pylon, near=nexuses.first)
+                if self.can_afford(PYLON):
+                    await self.build(PYLON, near=nexuses.first)
 
     async def build_assimilators(self):
         for nexus in self.units(nexus).ready:
@@ -41,6 +43,23 @@ class AleeksBot(sc2.BotAI):
         if self.units(NEXUS).amount < 3 and not self.already_pending(NEXUS):
             if self.can_afford(NEXUS):
                 await self.expand_now()
+
+
+    async def attack_buildings(self):
+        if self.units(PYLON).ready.exists:
+            pylon = self.units(PYLON).ready.random
+            if self.units(GATEWAY).ready.exists:
+                if not self.units(CYBERNETICSCORE):
+                    if self.can_afford(CYBERNETICSCORE) and not self.already_pending(CYBERNETICSCORE):
+                        await self.build(CYBERNETICSCORE, near=pylon)
+            else:
+                if self.can_afford(GATEWAY) and not self.already_pending(GATEWAY):
+                    await self.build(GATEWAY, near = pylon)
+                
+    async def attack_army(self):
+        for gw in self.units(GATEWAY).ready.noqueue:
+            if self.can_afford(STALKER) and self.supply_left > 0:
+                await self.do(gw.train(STALKER))
 
 
 
