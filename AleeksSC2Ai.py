@@ -31,7 +31,7 @@ class AleeksBot(sc2.BotAI):
 
     async def build_pylons(self):
         if self.supply_left < 7 and not self.already_pending(UnitTypeId.PYLON):
-            nexuses = self.townhalls.ready
+            nexuses = self.townhalls.ready.random
             if nexuses.exists:
                 if self.can_afford(UnitTypeId.PYLON):
                     await self.build(UnitTypeId.PYLON, near = nexuses.first)
@@ -58,21 +58,19 @@ class AleeksBot(sc2.BotAI):
 
 
     async def build_gateway_core(self):
-        if self.units(UnitTypeId.PYLON).ready.exists:
-            pylon1 = self.units(UnitTypeId.PYLON).ready.random
-            if self.units(UnitTypeId.GATEWAY).ready.exists:
-                if not self.units(UnitTypeId.CYBERNETICSCORE):
+        if self.structures(UnitTypeId.PYLON).ready.exists:
+            pylon1 = self.structures(UnitTypeId.PYLON).ready.random
+            if self.structures(UnitTypeId.GATEWAY).ready.exists:
+                if not self.structures(UnitTypeId.CYBERNETICSCORE):
                     if self.can_afford(UnitTypeId.CYBERNETICSCORE) and not self.already_pending(UnitTypeId.CYBERNETICSCORE):
                         await self.build(UnitTypeId.CYBERNETICSCORE, near = pylon1)
             else:
                 if self.can_afford(UnitTypeId.GATEWAY) and not self.already_pending(UnitTypeId.GATEWAY):
                     await self.build(UnitTypeId.GATEWAY, near = pylon1)
 
-                  
-
 
     async def build_stalker(self):
-        for gateway1 in self.units(UnitTypeId.GATEWAY).ready.idle:
+        for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
             if self.can_afford(UnitTypeId.STALKER) and self.supply_left > 0:
                 gateway1.train(UnitTypeId.STALKER)
 
@@ -86,6 +84,6 @@ class AleeksBot(sc2.BotAI):
 
 run_game(
     sc2.maps.get("AbyssalReefLE"),
-    [Bot(sc2.Race.Protoss, AleeksBot()), Computer(sc2.Race.Terran, sc2.Difficulty.Easy)],
+    [Bot(sc2.Race.Protoss, AleeksBot()), Computer(sc2.Race.Zerg, sc2.Difficulty.Easy)],
     realtime = False,
 )
