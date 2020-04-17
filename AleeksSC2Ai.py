@@ -10,6 +10,9 @@ from sc2.units import Units
 from sc2.position import Point2
 from sc2.ids.buff_id import BuffId
 from sc2.player import Bot, Computer
+import cv2 as cv2
+import numpy as np
+
 
 
 class AleeksBot(sc2.BotAI):
@@ -20,6 +23,7 @@ class AleeksBot(sc2.BotAI):
 
     async def on_step(self, interation):
         self.iteration = interation
+        await self.scout()
         await self.distribute_workers()
         await self.build_workers()
         await self.build_pylons()
@@ -30,6 +34,51 @@ class AleeksBot(sc2.BotAI):
         #await self.build_zealot()
         await self.attack()
         await self.chronoboost()
+        await self.intel()
+
+    async def scout(self):
+        if len(self.units(UnitTypeId.OBSERVER)) > 0:
+            scout = self.units(UnitTypeId.OBSERVER)[0]
+            if scout.is_idle:
+                enemy_location = self.enemy_start_locations[0]
+                move_to = enemy_location.random
+                print(move_to)
+                scout.move(move_to)
+
+        else:
+            for rf in self.structures(UnitTypeId.ROBOTICSFACILITY).ready.idle:
+                if self.can_afford(UnitTypeId.OBSERVER) and self.supply_left > 0:
+                    rf.train(UnitTypeId.OBSERVER)
+
+
+
+
+
+    async def intel(self):
+        game_data = np.zeros((self.game_info.map_size[1],self.game_info.map_size[0], 3), np.uint8)
+
+        draw_dic = {
+            UnitTypeId.NEXUS : [15, (0, 255, 0)],
+            UnitTypeId.PYLON : [3, (20, 235, 0)],
+            UnitTypeId.PROBE : [1, (55, 200, 0)],
+            UnitTypeId.ASSIMILATOR : [2, (55, 200, 0)],
+            UnitTypeId.GATEWAY : [3, (200, 100, 0)],
+            UnitTypeId.CYBERNETICSCORE : [3, (150, 150, 0)],
+            UnitTypeId.STARGATE : [5, (255, 0, 0)],
+            UnitTypeId.VOIDRAY : [3, (255, 100, 0)],
+        }
+
+
+
+        for unit_type in draw_dic:
+           for unit in self.units(unit_type).ready or self.structures(unit_type).ready:
+                pos = unit.position
+                cv2.circle(game_data, (int(pos[0]), int(pos[1])), draw_dic[unit_type][0], draw_dic[unit_type][1], -1)
+
+        flipped = cv2.flip(game_data, 0)
+        resized = cv2.resize(flipped, dsize = None, fx = 3, fy = 3)
+        cv2.imshow('Intel', resized)
+        cv2.waitKey(1)
 
 
     async def build_workers(self):
@@ -79,32 +128,32 @@ class AleeksBot(sc2.BotAI):
                 if self.can_afford(UnitTypeId.CYBERNETICSCORE) and not self.already_pending(UnitTypeId.CYBERNETICSCORE):
                     await self.build(UnitTypeId.CYBERNETICSCORE, near = pylon1)
 
-            elif len(self.structures(UnitTypeId.GATEWAY)) < 3:
+            elif len(self.structures(UnitTypeId.GATEWAY)) < 1:
                 if self.can_afford(UnitTypeId.GATEWAY) and not self.already_pending(UnitTypeId.GATEWAY):
                     await self.build(UnitTypeId.GATEWAY, near = pylon1)
 
             if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
-                if len(self.units(UnitTypeId.STARGATE)) < ((self.iteration/self.ITERATION_PER_MINUTE)/2):
+                if len(self.units(UnitTypeId.STARGATE)) < (self.iteration/self.ITERATION_PER_MINUTE):
                     if self.can_afford(UnitTypeId.STARGATE) and not self.already_pending(UnitTypeId.STARGATE):
                         await self.build(UnitTypeId.STARGATE, near = pylon1)
 
 
     async def build_stalker(self):
-        for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
-            if not self.units(UnitTypeId.STALKER).amount > self.units(UnitTypeId.VOIDRAY).amount:
-                if self.can_afford(UnitTypeId.STALKER) and self.supply_left > 2:
-                    gateway1.train(UnitTypeId.STALKER)
+        #for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
+        #    if not self.units(UnitTypeId.STALKER).amount > self.units(UnitTypeId.VOIDRAY).amount:
+        #        if self.can_afford(UnitTypeId.STALKER) and self.supply_left > 2:
+        #            gateway1.train(UnitTypeId.STALKER)
 
         for stargate in self.structures(UnitTypeId.STARGATE).ready.idle:
-            if self.can_afford(UnitTypeId.VOIDRAY) and self.supply_left > 2:
+            if self.can_afford(UnitTypeId.VOIDRAY) and self.supply_left > 0:
                 stargate.train(UnitTypeId.VOIDRAY)
 
 
-    async def build_zealot(self):
-        if self.structures(UnitTypeId.GATEWAY) and not self.structures(UnitTypeId.CYBERNETICSCORE).ready:
-            for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
-                if self.can_afford(UnitTypeId.ZEALOT) and self.supply_left > 1:
-                    gateway1.train(UnitTypeId.ZEALOT)
+    #async def build_zealot(self):
+    #    if self.structures(UnitTypeId.GATEWAY) and not self.structures(UnitTypeId.CYBERNETICSCORE).ready:
+    #        for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
+    #            if self.can_afford(UnitTypeId.ZEALOT) and self.supply_left > 1:
+    #                gateway1.train(UnitTypeId.ZEALOT)
 
 
     def find_enemy(self, state):
@@ -120,7 +169,7 @@ class AleeksBot(sc2.BotAI):
     async def attack(self):
         # {UNIT: [n to fight, n to defend]}
         aggressive_units = {
-                            UnitTypeId.STALKER: [15, 1],
+                            #UnitTypeId.STALKER: [15, 1],
                             UnitTypeId.VOIDRAY: [8, 1],
                             }
 
@@ -159,9 +208,17 @@ class AleeksBot(sc2.BotAI):
                     break
 
     
+map_pool = [
+    "AbyssalReefLE", "BelShirVestigeLE",
+    "CactusValleyLE", "HonorgroundsLS", 
+    "NewkirkPrecinctTE", "PaladinoTerminalLE",
+    "ProximaStationLE"
+    ]
+
+playing_map = random.choice(map_pool)
 
 run_game(
-    sc2.maps.get("AbyssalReefLE"),
+    sc2.maps.get(playing_map),
     [
     Bot(sc2.Race.Protoss, AleeksBot()), 
     Computer(sc2.Race.Terran, sc2.Difficulty.Hard)
