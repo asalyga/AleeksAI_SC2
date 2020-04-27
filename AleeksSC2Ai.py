@@ -1,5 +1,6 @@
 import sc2
 import random
+import time
 from sc2 import run_game, maps, Race, Difficulty, position
 from sc2.ids.unit_typeid import UnitTypeId
 from sc2.ids.ability_id import AbilityId
@@ -13,12 +14,26 @@ from sc2.player import Bot, Computer
 import cv2 as cv2
 import numpy as np
 
+#os.environ["SC2PATH"] = '/Applications/StarCraft2'
+
+HEADLESS = False
 
 class AleeksBot(sc2.BotAI):
     def __init__(self):
         self.ITERATION_PER_MINUTE = 165
         self.raw_affects_selection = True
+        #self.unit_command_uses_self_do = True
+        self.do_something_after = 0
+        self.train_data = []
+ 
 
+    def on_end(self, game_result):
+        print('--- on_end called ---')
+        print(game_result)
+        if game_result == game_result.Victory:
+            np.save("train_data/{}.npy".format(str(int(time.time()))), np.array(self.train_data))
+    
+    
 
     async def on_step(self, interation):
         self.iteration = interation
@@ -82,8 +97,37 @@ class AleeksBot(sc2.BotAI):
             pos = observer.position
             cv2.circle(game_data, (int(pos[0]), int(pos[1])), 1, (225, 225, 225), -1)
 
-        flipped = cv2.flip(game_data, 0)
-        resized = cv2.resize(flipped, dsize = None, fx = 3, fy = 3)
+        line_max = 50
+        mineral_ratio = self.minerals/1500
+        if mineral_ratio > 1.0:
+            mineral_ratio = 1.0
+
+        vespene_ratio = self.vespene/1500
+        if vespene_ratio > 1.0:
+            vespene_ratio = 1.0
+
+
+        population_ratio = self.supply_left/self.supply_cap
+        if population_ratio > 1.0:
+            population_ratio = 1.0
+
+        plausible_supply = self.supply_cap / 200.0
+
+
+        military_weight = len(self.units(UnitTypeId.VOIDRAY)) / (self.supply_cap-self.supply_left)
+        if military_weight > 1.0:
+            military_weight = 1.0
+
+
+        cv2.line(game_data, (0, 19), (int(line_max*military_weight), 19), (250, 250, 200), 3)
+        cv2.line(game_data, (0, 13), (int(line_max*plausible_supply), 13), (220, 200, 200), 3)
+        cv2.line(game_data, (0, 11), (int(line_max*population_ratio), 11), (150, 150, 150), 3)
+        cv2.line(game_data, (0,  7), (int(line_max*vespene_ratio), 7), (210, 200, 0), 3)
+        cv2.line(game_data, (0,  3), (int(line_max*mineral_ratio), 3), (0, 255, 25), 3)
+
+
+        self.flipped = cv2.flip(game_data, 0)
+        resized = cv2.resize(self.flipped, dsize = None, fx = 3, fy = 3)
         cv2.imshow('vision', resized)
         cv2.waitKey(1)
 
@@ -91,7 +135,6 @@ class AleeksBot(sc2.BotAI):
     def random_location(self, enemy_start_locations):
         x = enemy_start_locations[0]
         y = enemy_start_locations[1]
-
         x += ((random.randrange(-20,20))/100) * enemy_start_locations[0]
         y += ((random.randrange(-20,20))/100) * enemy_start_locations[1]
 
@@ -158,7 +201,7 @@ class AleeksBot(sc2.BotAI):
 
 
     async def expand(self):
-        if self.townhalls.amount  < 3 and not self.already_pending(UnitTypeId.NEXUS) and self.can_afford(UnitTypeId.NEXUS):
+        if self.townhalls.amount  < 5 and not self.already_pending(UnitTypeId.NEXUS):
             if self.can_afford(UnitTypeId.NEXUS):
                 await self.expand_now()
 
@@ -192,24 +235,24 @@ class AleeksBot(sc2.BotAI):
 
 
     async def build_army(self):
-        if self.units(UnitTypeId.STALKER).amount < 13:
+        """if self.units(UnitTypeId.STALKER).amount < 13:
             for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
                 #if not self.units(UnitTypeId.STALKER).amount > self.units(UnitTypeId.VOIDRAY).amount:
                     if self.can_afford(UnitTypeId.STALKER) and self.supply_left > 2:
                         gateway1.train(UnitTypeId.STALKER)
-
+        """
         if self.units(UnitTypeId.VOIDRAY).amount < 10:
             for stargate in self.structures(UnitTypeId.STARGATE).ready.idle:
                 if self.can_afford(UnitTypeId.VOIDRAY) and self.supply_left > 0:
                     stargate.train(UnitTypeId.VOIDRAY)
 
 
-    #async def build_zealot(self):
-    #    if self.structures(UnitTypeId.GATEWAY) and not self.structures(UnitTypeId.CYBERNETICSCORE).ready:
-    #        for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
-    #            if self.can_afford(UnitTypeId.ZEALOT) and self.supply_left > 1:
-    #                gateway1.train(UnitTypeId.ZEALOT)
-
+    """ async def build_zealot(self):
+        if self.structures(UnitTypeId.GATEWAY) and not self.structures(UnitTypeId.CYBERNETICSCORE).ready:
+            for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
+                if self.can_afford(UnitTypeId.ZEALOT) and self.supply_left > 1:
+                    gateway1.train(UnitTypeId.ZEALOT)
+    """
 
     def find_enemy(self, state):
         if len(self.enemy_units) > 0:
@@ -222,41 +265,54 @@ class AleeksBot(sc2.BotAI):
 
 
     async def attack(self):
-        # {UNIT: [n to fight, n to defend]}
-        units = {
-                            UnitTypeId.STALKER: [10, 1],
-                            UnitTypeId.VOIDRAY: [8, 1],
-                            }
+        if len(self.units(UnitTypeId.VOIDRAY).idle) > 0:
+            choice = random.randrange(0, 4)
+            target = False
+            if self.iteration > self.do_something_after:
+                if choice == 0:
+                    #dont attack
+                    wait = random.randrange(20, 165)
+                    self.do_something_after = self.iteration + wait
+                
+                elif choice == 1:
+                    #attack closets units to our nexuses
+                    if len(self.enemy_units) > 0:
+                        target = self.enemy_units.closest_to(random.choice(self.structures(UnitTypeId.NEXUS)))
 
-        for UNIT in units:
-            if self.units(UNIT).amount > units[UNIT][0] and self.units(UNIT).amount > units[UNIT][1]:
-                for s in self.units(UNIT).idle:
-                    self.do(s.attack(self.find_enemy(self.state)))
-                    #s.attack(self.find_enemy(self.state))
+                elif choice == 2:
+                    if len(self.enemy_structures) > 0:
+                        target = random.choice(self.enemy_structures)
 
-            elif self.units(UNIT).amount > units[UNIT][1]:
-                if len(self.enemy_units) > 0:
-                    for s in self.units(UNIT).idle:
-                        self.do(s.attack(random.choice(self.enemy_units)))
-                        #s.attack(random.choice(self.enemy_units))
+                elif choice == 3:
+                    #attack enemy startig location
+                    target = self.enemy_start_locations[0]
 
+                if target:
+                    for vr in self.units(UnitTypeId.VOIDRAY).idle:
+                        self.do(vr.attack(target))
+
+                y = np.zeros(4)
+                y[choice] = 1
+                print(y)
+                self.train_data.append([y, self.flipped])
+                
               
     async def chronoboost(self):
-        nexus = self.townhalls.ready.random
-        if not nexus.is_idle and not nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
-            nexuses = self.structures(UnitTypeId.NEXUS)
-            abilities = await self.get_available_abilities(nexuses)
-            for loop_nexus, abilities_nexus in zip(nexuses, abilities):
-                if AbilityId.EFFECT_CHRONOBOOSTENERGYCOST in abilities_nexus:
-                    loop_nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
-                    break
+        if self.townhalls.exists:
+            nexus = self.structures(UnitTypeId.NEXUS).ready.random
+            if not nexus.is_idle and not nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
+                nexuses = self.structures(UnitTypeId.NEXUS)
+                abilities = await self.get_available_abilities(nexuses)
+                for loop_nexus, abilities_nexus in zip(nexuses, abilities):
+                    if AbilityId.EFFECT_CHRONOBOOSTENERGYCOST in abilities_nexus:
+                        loop_nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
+                        break
 
     
 map_pool = [
     "AbyssalReefLE", "BelShirVestigeLE",
-    "CactusValleyLE", "HonorgroundsLS", 
-    "NewkirkPrecinctTE", "PaladinoTerminalLE",
-    "ProximaStationLE"
+    "CactusValleyLE", "ProximaStationLE", 
+    "NewkirkPrecinctTE", "PaladinoTerminalLE"
     ]
 
 playing_map = random.choice(map_pool)
@@ -265,7 +321,7 @@ run_game(
     sc2.maps.get(playing_map),
     [
     Bot(sc2.Race.Protoss, AleeksBot()), 
-    Computer(sc2.Race.Terran, sc2.Difficulty.Hard)
+    Computer(sc2.Race.Terran, sc2.Difficulty.Easy)
     ],
     realtime = False,
 )
