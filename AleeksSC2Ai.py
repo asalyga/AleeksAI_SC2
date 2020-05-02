@@ -13,26 +13,36 @@ from sc2.ids.buff_id import BuffId
 from sc2.player import Bot, Computer
 import cv2 as cv2
 import numpy as np
-
+import keras
 #os.environ["SC2PATH"] = '/Applications/StarCraft2'
 
 HEADLESS = False
 
 class AleeksBot(sc2.BotAI):
-    def __init__(self):
+    def __init__(self, use_model = False):
         self.ITERATION_PER_MINUTE = 165
         self.raw_affects_selection = True
         #self.unit_command_uses_self_do = True
         self.do_something_after = 0
+        self.use_model = use_model
         self.train_data = []
- 
+        if self.use_model:
+            print ("Using model")
+            self.model = keras.models.load_model("BasicCNN")
+
 
     def on_end(self, game_result):
         print('--- on_end called ---')
-        print(game_result)
+        print(game_result, self.use_model)
         if game_result == game_result.Victory:
             np.save("train_data/{}.npy".format(str(int(time.time()))), np.array(self.train_data))
-    
+
+        with open("log.txt","a") as f:
+            if self.use_model:
+                f.write("Model {}\n".format(game_result))
+            else:
+                f.write("Random {}\n".format(game_result))
+
     
 
     async def on_step(self, interation):
@@ -266,10 +276,24 @@ class AleeksBot(sc2.BotAI):
 
     async def attack(self):
         if len(self.units(UnitTypeId.VOIDRAY).idle) > 0:
-            choice = random.randrange(0, 4)
+            #choice = random.randrange(0, 4)
             target = False
             if self.iteration > self.do_something_after:
-                if choice == 0:
+                if self.use_model:
+                    prediction = self.model.predict([self.flipped.reshape([-1, 176, 200, 3])])
+                    choice = np.argmax(prediction[0])
+
+                    choice_dict = {0: "No Attack!",
+                                  1: "Attack close to our nexus!",
+                                  2: "Attack Enemy Structure!",
+                                  3: "Attack Eneemy Start!"}
+
+                    print("Choice #{}:{}".format(choice, choice_dict[choice]))
+
+                else:
+                    choice = random.randrage(0, 4)
+
+                """if choice == 0:
                     #dont attack
                     wait = random.randrange(20, 165)
                     self.do_something_after = self.iteration + wait
@@ -294,7 +318,7 @@ class AleeksBot(sc2.BotAI):
                 y = np.zeros(4)
                 y[choice] = 1
                 print(y)
-                self.train_data.append([y, self.flipped])
+                self.train_data.append([y, self.flipped])"""
                 
               
     async def chronoboost(self):
@@ -320,8 +344,8 @@ playing_map = random.choice(map_pool)
 run_game(
     sc2.maps.get(playing_map),
     [
-    Bot(sc2.Race.Protoss, AleeksBot()), 
-    Computer(sc2.Race.Terran, sc2.Difficulty.Easy)
+    Bot(sc2.Race.Protoss, AleeksBot(use_model = True)), 
+    Computer(sc2.Race.Terran, sc2.Difficulty.Medium)
     ],
-    realtime = False,
+    realtime = True
 )
