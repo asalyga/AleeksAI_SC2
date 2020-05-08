@@ -1,6 +1,9 @@
 import sc2
 import random
+import cv2
+import numpy as np
 import time
+
 from sc2 import run_game, maps, Race, Difficulty, position
 from sc2.ids.unit_typeid import UnitTypeId
 from sc2.ids.ability_id import AbilityId
@@ -11,69 +14,56 @@ from sc2.units import Units
 from sc2.position import Point2
 from sc2.ids.buff_id import BuffId
 from sc2.player import Bot, Computer
-import cv2 as cv2
-import numpy as np
-import keras
+
 #os.environ["SC2PATH"] = '/Applications/StarCraft2'
 
 HEADLESS = False
 
 class AleeksBot(sc2.BotAI):
     def __init__(self, use_model = False):
-        self.ITERATION_PER_MINUTE = 165
         self.raw_affects_selection = True
-        #self.unit_command_uses_self_do = True
-        self.do_something_after = 0
-        self.use_model = use_model
+        self.ITERATION_PER_MINUTE = 165
         self.train_data = []
-        if self.use_model:
-            print ("Using model")
-            self.model = keras.models.load_model("BasicCNN")
+        #self.unit_command_uses_self_do = True
+        self.scouts_and_spots = {}
 
 
     def on_end(self, game_result):
         print('--- on_end called ---')
-        print(game_result, self.use_model)
+        print(game_result)
         if game_result == game_result.Victory:
-            np.save("train_data/{}.npy".format(str(int(time.time()))), np.array(self.train_data))
+           np.save("train_data/{}.npy".format(str(int(time.time()))), np.array(self.train_data))
 
-        with open("log.txt","a") as f:
-            if self.use_model:
-                f.write("Model {}\n".format(game_result))
-            else:
-                f.write("Random {}\n".format(game_result))
 
-    
 
     async def on_step(self, interation):
-        self.iteration = interation
+        self.time = (self.state.game_loop/22.4) / 60
+        #self.iteration = interation
         await self.scout()
         await self.distribute_workers()
         await self.build_workers()
         await self.build_pylons()
         await self.build_assimilators()
         await self.expand()
-        await self.build_gateway_core_robo()
+        await self.build_buildings()
         await self.build_army()
-        #await self.build_zealot()
         await self.attack()
         await self.chronoboost()
         await self.vision()
-        await self.scout()
 
 
     async def vision(self):
         game_data = np.zeros((self.game_info.map_size[1],self.game_info.map_size[0], 3), np.uint8)
         draw_dic = {
-            UnitTypeId.NEXUS : [15, (0, 255, 0)],
-            UnitTypeId.PYLON : [3, (20, 235, 0)],
-            UnitTypeId.PROBE : [1, (55, 200, 0)],
+            UnitTypeId.NEXUS : [5, (0, 255, 0)],
+            UnitTypeId.PYLON : [2, (20, 235, 0)],
+            UnitTypeId.PROBE : [0.75, (55, 200, 0)],
             UnitTypeId.ASSIMILATOR : [2, (55, 200, 0)],
             UnitTypeId.GATEWAY : [3, (200, 100, 0)],
             UnitTypeId.CYBERNETICSCORE : [3, (150, 150, 0)],
-            UnitTypeId.STARGATE : [5, (255, 0, 0)],
-            UnitTypeId.ROBOTICSFACILITY : [5, (215, 155, 0)],
-            UnitTypeId.VOIDRAY : [3, (255, 100, 0)],
+            UnitTypeId.STARGATE : [3, (255, 0, 0)],
+            UnitTypeId.ROBOTICSFACILITY : [3, (215, 155, 0)],
+            UnitTypeId.VOIDRAY : [2, (255, 100, 0)],
         }
 
         for unit_type in draw_dic:
@@ -81,7 +71,7 @@ class AleeksBot(sc2.BotAI):
                 pos = unit.position
                 cv2.circle(game_data, (int(pos[0]), int(pos[1])), draw_dic[unit_type][0], draw_dic[unit_type][1], -1)
 
-        main_base_names = ["nexus", "supplydepot", "hatchery"]
+        main_base_names = ["nexus", "commandCenter", "hatchery"]
         for enemy_building in self.enemy_structures:
             pos = enemy_building.position
             if enemy_building.name.lower() not in main_base_names:
@@ -138,15 +128,21 @@ class AleeksBot(sc2.BotAI):
 
         self.flipped = cv2.flip(game_data, 0)
         resized = cv2.resize(self.flipped, dsize = None, fx = 3, fy = 3)
-        cv2.imshow('vision', resized)
-        cv2.waitKey(1)
+
+        if not HEADLESS:
+            if self.use_model:
+                cv2.imshow('Model Intel', resized)
+                cv2.waitKey(1)
+            else:
+                cv2.imshow('Random Intel', resized)
+                cv2.waitKey(1)
 
 
     def random_location(self, enemy_start_locations):
         x = enemy_start_locations[0]
         y = enemy_start_locations[1]
-        x += ((random.randrange(-20,20))/100) * enemy_start_locations[0]
-        y += ((random.randrange(-20,20))/100) * enemy_start_locations[1]
+        x += ((random.randrange(-20,20))/100) * self.game_info.map_size[0]
+        y += ((random.randrange(-20,20))/100) * self.game_info.map_size[1]
 
         if x < 0:
             x = 0
@@ -162,18 +158,55 @@ class AleeksBot(sc2.BotAI):
 
     
     async def scout(self):
-        if len(self.units(UnitTypeId.OBSERVER)) > 0:
-            scout = self.units(UnitTypeId.OBSERVER)[0]
-            if scout.is_idle:
-                enemy_location = self.enemy_start_locations[0]
-                move_to = self.random_location(enemy_location)
-                print(move_to)
-                scout.move(move_to)
+        self.expand_dis_dir = {}
+        for el in self.expansion_locations:
+            distance_to_enemy_start = el.distance_to(self.enemy_start_locations[0])
+            self.expand_dis_dir[distance_to_enemy_start] = el
+            
+        self.ordered_exp_distances = sorted(k for k in self.expand_dis_dir)
+        existin_ids = [unit.tag for unit in self.units]
+        to_be_removed = []
+        for noted_scout in self.scouts_and_spots:
+            if noted_scout not in existin_ids:
+                to_be_removed(noted_scout)
+        
+        for scout in to_be_removed:
+            del self.scouts_and_spots[scout]
 
+        if len(self.structures(UnitTypeId.ROBOTICSFACILITY).ready) == 0:
+            unit_type = UnitTypeId.PROBE
+            unit_limit = 1
         else:
-            for rf in self.structures(UnitTypeId.ROBOTICSFACILITY).ready.idle:
-                if self.can_afford(UnitTypeId.OBSERVER) and self.supply_left > 0:
-                    rf.train(UnitTypeId.OBSERVER)
+            unit_type = UnitTypeId.OBSERVER
+            unit_limit = 3
+        
+        assign_scout = True
+
+        if unit_type == UnitTypeId.PROBE:
+            for unit in self.units(UnitTypeId.PROBE):
+                if unit.tag in self.scouts_and_spots:
+                    assign_scout = False
+
+
+        if assign_scout:
+            if len(self.units(unit_type).idle) > 0:
+                for obs in self.units(unit_type).idle[:unit_limit]:
+                    if obs.tag not in self.scouts_and_spots:
+                        for dist in self.ordered_exp_distances:
+                            try:
+                                location = next(value for key, value in self.expand_dis_dir.items() if key == dist)
+                                active_locations = [self.scouts_and_spots[k]for k in self.scouts_and_spots]
+
+                                if location not in active_locations:
+                                    if unit_type == UnitTypeId.PROBE:
+                                        for unit in self.units(UnitTypeId.PROBE):
+                                            if unit.tag in self.scouts_and_spots:
+                                                continue
+                                    await self.do(obs.move(location))
+                                    self.scouts_and_spots[obs.tag] = location
+                                    break
+                            except Exception as e:
+                                pass
 
 
     async def build_workers(self):
@@ -211,12 +244,14 @@ class AleeksBot(sc2.BotAI):
 
 
     async def expand(self):
-        if self.townhalls.amount  < 5 and not self.already_pending(UnitTypeId.NEXUS):
-            if self.can_afford(UnitTypeId.NEXUS):
+        try:
+            if self.townhalls.amount < self.time/2 and self.can_afford(UnitTypeId.NEXUS):
                 await self.expand_now()
+        except Exception as e:
+            print(str(e))
 
 
-    async def build_gateway_core_robo(self):
+    async def build_buildings(self):
         if self.structures(UnitTypeId.PYLON).ready.exists:
             pylon1 = self.structures(UnitTypeId.PYLON).ready.random
 
@@ -232,10 +267,9 @@ class AleeksBot(sc2.BotAI):
 
 
             if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
-                if len(self.units(UnitTypeId.STARGATE)) < 5:
-                    if len(self.units(UnitTypeId.STARGATE)) < ((self.iteration*3)/self.ITERATION_PER_MINUTE):
-                        if self.can_afford(UnitTypeId.STARGATE) and not self.already_pending(UnitTypeId.STARGATE):
-                            await self.build(UnitTypeId.STARGATE, near = pylon1)
+                if len(self.units(UnitTypeId.STARGATE)) < self.time:
+                    if self.can_afford(UnitTypeId.STARGATE) and not self.already_pending(UnitTypeId.STARGATE):
+                        await self.build(UnitTypeId.STARGATE, near = pylon1)
 
 
             if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
@@ -273,52 +307,52 @@ class AleeksBot(sc2.BotAI):
             return self.enemy_start_locations[0]
 
 
-
     async def attack(self):
         if len(self.units(UnitTypeId.VOIDRAY).idle) > 0:
-            #choice = random.randrange(0, 4)
+
             target = False
-            if self.iteration > self.do_something_after:
+
+
+            if self.time > self.do_something_after:
                 if self.use_model:
                     prediction = self.model.predict([self.flipped.reshape([-1, 176, 200, 3])])
-                    choice = np.argmax(prediction[0])
-
-                    choice_dict = {0: "No Attack!",
-                                  1: "Attack close to our nexus!",
-                                  2: "Attack Enemy Structure!",
-                                  3: "Attack Eneemy Start!"}
-
-                    print("Choice #{}:{}".format(choice, choice_dict[choice]))
-
+                    choice = np.argmax(prediction[0]) 
                 else:
-                    choice = random.randrage(0, 4)
+                    choice = random.randrange(0, 4)
 
-                """if choice == 0:
+
+
+                if choice == 0:
                     #dont attack
-                    wait = random.randrange(20, 165)
-                    self.do_something_after = self.iteration + wait
+                    wait = random.randrange(7,100)/100
+                    self.do_something_after = self.time + wait
                 
+
                 elif choice == 1:
                     #attack closets units to our nexuses
                     if len(self.enemy_units) > 0:
                         target = self.enemy_units.closest_to(random.choice(self.structures(UnitTypeId.NEXUS)))
 
+
                 elif choice == 2:
                     if len(self.enemy_structures) > 0:
                         target = random.choice(self.enemy_structures)
+
 
                 elif choice == 3:
                     #attack enemy startig location
                     target = self.enemy_start_locations[0]
 
+
                 if target:
                     for vr in self.units(UnitTypeId.VOIDRAY).idle:
                         self.do(vr.attack(target))
 
+
                 y = np.zeros(4)
                 y[choice] = 1
                 print(y)
-                self.train_data.append([y, self.flipped])"""
+                self.train_data.append([y, self.flipped])
                 
               
     async def chronoboost(self):
@@ -347,5 +381,5 @@ run_game(
     Bot(sc2.Race.Protoss, AleeksBot(use_model = True)), 
     Computer(sc2.Race.Terran, sc2.Difficulty.Medium)
     ],
-    realtime = True
+    realtime = False
 )
