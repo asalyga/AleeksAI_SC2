@@ -3,6 +3,8 @@ import random
 import cv2
 import numpy as np
 import time
+import math
+import keras
 
 from sc2 import run_game, maps, Race, Difficulty, position
 from sc2.ids.unit_typeid import UnitTypeId
@@ -22,23 +24,37 @@ HEADLESS = False
 class AleeksBot(sc2.BotAI):
     def __init__(self, use_model = False):
         self.raw_affects_selection = True
-        self.ITERATION_PER_MINUTE = 165
         self.train_data = []
-        #self.unit_command_uses_self_do = True
+        self.use_model = use_model
+        self.do_something_after = 0
+
         self.scouts_and_spots = {}
+        self.train_data = []
+        
+        if self.use_model:
+            print("Using model")
+            self.model = keras.models.load_model("TrainedData")
+
 
 
     def on_end(self, game_result):
         print('--- on_end called ---')
-        print(game_result)
+        print(game_result, self.use_model)
         if game_result == game_result.Victory:
            np.save("train_data/{}.npy".format(str(int(time.time()))), np.array(self.train_data))
 
+        
+        with open("gameout-random-vs-medium.txt", "a") as f:
+            if self.use_model:
+                f.write("Model {}\n".format(game_result))
+            else:
+                f.write("Random {}\n".format(game_result))
 
 
     async def on_step(self, interation):
-        self.time = (self.state.game_loop/22.4) / 60
-        #self.iteration = interation
+        self.GameTime = (self.state.game_loop/22.4) / 60
+        print('Time:', self.GameTime)
+        await self.build_scout()
         await self.scout()
         await self.distribute_workers()
         await self.build_workers()
@@ -57,7 +73,7 @@ class AleeksBot(sc2.BotAI):
         draw_dic = {
             UnitTypeId.NEXUS : [5, (0, 255, 0)],
             UnitTypeId.PYLON : [2, (20, 235, 0)],
-            UnitTypeId.PROBE : [0.75, (55, 200, 0)],
+            UnitTypeId.PROBE : [1, (55, 200, 0)],
             UnitTypeId.ASSIMILATOR : [2, (55, 200, 0)],
             UnitTypeId.GATEWAY : [3, (200, 100, 0)],
             UnitTypeId.CYBERNETICSCORE : [3, (150, 150, 0)],
@@ -71,7 +87,8 @@ class AleeksBot(sc2.BotAI):
                 pos = unit.position
                 cv2.circle(game_data, (int(pos[0]), int(pos[1])), draw_dic[unit_type][0], draw_dic[unit_type][1], -1)
 
-        main_base_names = ["nexus", "commandCenter", "hatchery"]
+
+        main_base_names = ['nexus', 'commandcenter', 'orbitalcommand', 'planetaryfortress', 'hatchery']
         for enemy_building in self.enemy_structures:
             pos = enemy_building.position
             if enemy_building.name.lower() not in main_base_names:
@@ -96,6 +113,10 @@ class AleeksBot(sc2.BotAI):
         for observer in self.units(UnitTypeId.OBSERVER).ready:
             pos = observer.position
             cv2.circle(game_data, (int(pos[0]), int(pos[1])), 1, (225, 225, 225), -1)
+
+        for vr in self.units(UnitTypeId.VOIDRAY).ready:
+            pos = vr.position
+            cv2.circle(game_data, (int(pos[0]), int(pos[1])), 3, (255, 100, 0), -1)
 
         line_max = 50
         mineral_ratio = self.minerals/1500
@@ -138,11 +159,12 @@ class AleeksBot(sc2.BotAI):
                 cv2.waitKey(1)
 
 
-    def random_location(self, enemy_start_locations):
-        x = enemy_start_locations[0]
-        y = enemy_start_locations[1]
-        x += ((random.randrange(-20,20))/100) * self.game_info.map_size[0]
-        y += ((random.randrange(-20,20))/100) * self.game_info.map_size[1]
+    def random_location(self, location):
+        x = location[0]
+        y = location[1]
+
+        x += random.randrange(-5,5)
+        y += random.randrange(-5,5)
 
         if x < 0:
             x = 0
@@ -150,25 +172,36 @@ class AleeksBot(sc2.BotAI):
             y = 0
         if x > self.game_info.map_size[0]:
             x = self.game_info.map_size[0]
+
         if y > self.game_info.map_size[1]:
             y = self.game_info.map_size[1]
         
         go_to = position.Point2(position.Pointlike((x,y)))
         return go_to
 
+
+    async def build_scout(self):
+        if len(self.units(UnitTypeId.OBSERVER)) < math.floor(self.GameTime/3):
+            for rf in self.structures(UnitTypeId.ROBOTICSFACILITY).ready.idle:
+                print(len(self.units(UnitTypeId.OBSERVER)), self.GameTime/3)
+                if self.can_afford(UnitTypeId.OBSERVER) and self.supply_left > 0:
+                    rf.train(UnitTypeId.OBSERVER)
+
     
     async def scout(self):
         self.expand_dis_dir = {}
+
         for el in self.expansion_locations:
             distance_to_enemy_start = el.distance_to(self.enemy_start_locations[0])
             self.expand_dis_dir[distance_to_enemy_start] = el
             
         self.ordered_exp_distances = sorted(k for k in self.expand_dis_dir)
-        existin_ids = [unit.tag for unit in self.units]
+
+        existing_ids = [unit.tag for unit in self.units]
         to_be_removed = []
         for noted_scout in self.scouts_and_spots:
-            if noted_scout not in existin_ids:
-                to_be_removed(noted_scout)
+            if noted_scout not in existing_ids:
+                to_be_removed.append(noted_scout)
         
         for scout in to_be_removed:
             del self.scouts_and_spots[scout]
@@ -245,7 +278,7 @@ class AleeksBot(sc2.BotAI):
 
     async def expand(self):
         try:
-            if self.townhalls.amount < self.time/2 and self.can_afford(UnitTypeId.NEXUS):
+            if self.townhalls.amount < self.GameTime/2 and self.can_afford(UnitTypeId.NEXUS):
                 await self.expand_now()
         except Exception as e:
             print(str(e))
@@ -267,7 +300,7 @@ class AleeksBot(sc2.BotAI):
 
 
             if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
-                if len(self.units(UnitTypeId.STARGATE)) < self.time:
+                if len(self.units(UnitTypeId.STARGATE)) < self.GameTime:
                     if self.can_afford(UnitTypeId.STARGATE) and not self.already_pending(UnitTypeId.STARGATE):
                         await self.build(UnitTypeId.STARGATE, near = pylon1)
 
@@ -313,7 +346,7 @@ class AleeksBot(sc2.BotAI):
             target = False
 
 
-            if self.time > self.do_something_after:
+            if self.GameTime > self.do_something_after:
                 if self.use_model:
                     prediction = self.model.predict([self.flipped.reshape([-1, 176, 200, 3])])
                     choice = np.argmax(prediction[0]) 
@@ -325,7 +358,7 @@ class AleeksBot(sc2.BotAI):
                 if choice == 0:
                     #dont attack
                     wait = random.randrange(7,100)/100
-                    self.do_something_after = self.time + wait
+                    self.do_something_after = self.GameTime + wait
                 
 
                 elif choice == 1:
