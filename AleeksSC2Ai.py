@@ -27,13 +27,28 @@ class AleeksBot(sc2.BotAI):
         self.train_data = []
         self.use_model = use_model
         self.do_something_after = 0
-
         self.scouts_and_spots = {}
         self.train_data = []
-        
         if self.use_model:
             print("Using model")
             self.model = keras.models.load_model("TrainedData")
+
+        self.choices = {
+            0: self.build_scout,
+            1: self.build_zealot,
+            2: self.build_gateway,
+            3: self.build_stalker,
+            4: self.build_voidray,
+            5: self.build_workers,
+            6: self.build_assimilators,
+            7: self.build_stargate,
+            8: self.build_pylons,
+            9: self.defend_nexus,
+            10: self.attack_known_enemy_unit,
+            11: self.attack_known_enemy_structure,
+            12: self.expand,
+            13: self.do_nothing,
+        }
 
 
 
@@ -54,18 +69,11 @@ class AleeksBot(sc2.BotAI):
     async def on_step(self, interation):
         self.GameTime = (self.state.game_loop/22.4) / 60
         print('Time:', self.GameTime)
-        await self.build_scout()
-        await self.scout()
         await self.distribute_workers()
-        await self.build_workers()
-        await self.build_pylons()
-        await self.build_assimilators()
-        await self.expand()
-        await self.build_buildings()
-        await self.build_army()
-        await self.attack()
+        await self.scout()
+        await self.intel()
+        await self.do_something()
         await self.chronoboost()
-        await self.vision()
 
 
     async def vision(self):
@@ -284,6 +292,40 @@ class AleeksBot(sc2.BotAI):
             print(str(e))
 
 
+    async def build_gateway(self):
+        pylon1 = self.structures(UnitTypeId.PYLON).ready.random
+        if self.structures(UnitTypeId.GATEWAY).can_afford and not self.structures(UnitTypeId.GATEWAY).already_pending:
+            await self.build(UnitTypeId.GATEWAY, near = pylon1)
+
+
+    async def build_voidray(self):
+        stargates = self.structures(UnitTypeId.STARGATE).ready
+        if stargates.exists:
+            if self.units(UnitTypeId.VOIDRAY).can_afford:
+                await self.do(random.choice(stargates).train(UnitTypeId.VOIDRAY))
+
+
+    async def build_stalker(self):
+        pylon1 = self.structures(UnitTypeId.PYLON).ready.random
+        gateways = self.structures(UnitTypeId.GATEWAY).ready
+        cybernetics_core = self.structures(UnitTypeId.CYBERNETICSCORE).ready
+
+        if gateways.exists and cybernetics_core.exists:
+            if self.units(UnitTypeId.STALKER).can_afford:
+                awiat self.do(random.choice(gateways).train(UnitTypeId.STALKER))
+
+        if not.cybernetics_core.exists:
+            if self.structures(UnitTypeId.GATEWAY).ready.exists:
+                if self.structures(UnitTypeId.CYBERNETICSCORE).can_afford and not self.structures(UnitTypeId.CYBERNETICSCORE).already_pending:
+                    await self.build(UnitTypeId.CYBERNETICSCORE, near = pylon1)
+
+    async def build_workers(self):
+        nexuses = self.structures(UnitTypeId.NEXUS).ready
+        if nexuses.exists:
+            if self.units(UnitTypeId.PROBE).can_afford:
+                await self.do(random.choice(choices).train(UnitTypeId.PROBE))
+
+
     async def build_buildings(self):
         if self.structures(UnitTypeId.PYLON).ready.exists:
             pylon1 = self.structures(UnitTypeId.PYLON).ready.random
@@ -309,27 +351,24 @@ class AleeksBot(sc2.BotAI):
                 if len(self.structures(UnitTypeId.ROBOTICSFACILITY)) < 1:
                     if self.can_afford(UnitTypeId.ROBOTICSFACILITY) and not self.already_pending(UnitTypeId.ROBOTICSFACILITY):
                         await self.build(UnitTypeId.ROBOTICSFACILITY, near = pylon1)
+                        
+
+    async def build_zealot(self):
+        gateways = self.structures(UnitTypeId.GATEWAY).ready
+        if gateways.exists:
+            if self.unit(UnitTypeId.ZEALOT).can_afford:
+                await self.do(random.choice(gateways).train(UnitTypeId.ZEALOT))
 
 
-    async def build_army(self):
-        """if self.units(UnitTypeId.STALKER).amount < 13:
-            for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
-                #if not self.units(UnitTypeId.STALKER).amount > self.units(UnitTypeId.VOIDRAY).amount:
-                    if self.can_afford(UnitTypeId.STALKER) and self.supply_left > 2:
-                        gateway1.train(UnitTypeId.STALKER)
-        """
+    async def build_stalker(self):
+
+
+    async def build_voidray(self):
         if self.units(UnitTypeId.VOIDRAY).amount < 10:
             for stargate in self.structures(UnitTypeId.STARGATE).ready.idle:
                 if self.can_afford(UnitTypeId.VOIDRAY) and self.supply_left > 0:
                     stargate.train(UnitTypeId.VOIDRAY)
 
-
-    """ async def build_zealot(self):
-        if self.structures(UnitTypeId.GATEWAY) and not self.structures(UnitTypeId.CYBERNETICSCORE).ready:
-            for gateway1 in self.structures(UnitTypeId.GATEWAY).ready.idle:
-                if self.can_afford(UnitTypeId.ZEALOT) and self.supply_left > 1:
-                    gateway1.train(UnitTypeId.ZEALOT)
-    """
 
     def find_enemy(self, state):
         if len(self.enemy_units) > 0:
@@ -399,6 +438,21 @@ class AleeksBot(sc2.BotAI):
                         loop_nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
                         break
 
+    async def do_something(self):
+        if self.GameTime > self.do_something_after:
+            if self.use_model:
+                prediction = self.model.predict([self.flipped.reshape([-1, 176, 200, 3])])
+                choice = np.argmax(prediction[0])
+            else:
+                choice = random.randrange(0, 14)
+            try:
+                await self.choices[choice]()
+            except Exception as e:
+                print(str(e))
+            y = np.zeros(14)
+            y[choice] = 1
+            self.train_data.append([y, self.flipped])
+                    
     
 map_pool = [
     "AbyssalReefLE", "BelShirVestigeLE",
