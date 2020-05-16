@@ -71,9 +71,159 @@ class AleeksBot(sc2.BotAI):
         print('Time:', self.GameTime)
         await self.distribute_workers()
         await self.scout()
-        await self.intel()
+        await self.vision()
         await self.do_something()
         await self.chronoboost()
+
+    async def build_scout(self):
+        if len(self.units(UnitTypeId.OBSERVER)) < math.floor(self.GameTime/3):
+            for rf in self.structures(UnitTypeId.ROBOTICSFACILITY).ready.idle:
+                print(len(self.units(UnitTypeId.OBSERVER)), self.GameTime/3)
+                if self.can_afford(UnitTypeId.OBSERVER) and self.supply_left > 0:
+                    rf.train(UnitTypeId.OBSERVER)
+
+
+    async def build_zealot(self):
+        gateways = self.structures(UnitTypeId.GATEWAY).ready
+        if gateways.exists:
+            if self.unit(UnitTypeId.ZEALOT).can_afford:
+                await self.do(random.choice(gateways).train(UnitTypeId.ZEALOT))
+
+
+    async def build_gateway(self):
+        pylon1 = self.structures(UnitTypeId.PYLON).ready.random
+        if self.structures(UnitTypeId.GATEWAY).can_afford and not self.structures(UnitTypeId.GATEWAY).already_pending:
+            await self.build(UnitTypeId.GATEWAY, near = pylon1)
+
+
+    async def build_stalker(self):
+        pylon1 = self.structures(UnitTypeId.PYLON).ready.random
+        gateways = self.structures(UnitTypeId.GATEWAY).ready
+        cybernetics_core = self.structures(UnitTypeId.CYBERNETICSCORE).ready
+
+        if gateways.exists and cybernetics_core.exists:
+            if self.units(UnitTypeId.STALKER).can_afford:
+                awiat self.do(random.choice(gateways).train(UnitTypeId.STALKER))
+
+        if not.cybernetics_core.exists:
+            if self.structures(UnitTypeId.GATEWAY).ready.exists:
+                if self.structures(UnitTypeId.CYBERNETICSCORE).can_afford and not self.structures(UnitTypeId.CYBERNETICSCORE).already_pending:
+                    await self.build(UnitTypeId.CYBERNETICSCORE, near = pylon1)
+
+
+    async def build_voidray(self):
+        stargates = self.structures(UnitTypeId.STARGATE).ready
+        if stargates.exists:
+            if self.units(UnitTypeId.VOIDRAY).can_afford:
+                await self.do(random.choice(stargates).train(UnitTypeId.VOIDRAY))
+
+
+    async def build_workers(self):
+        CurrentAmountHalls = self.townhalls.ready.amount
+        CurrentProbes = self.workers.amount
+        MaxProbes = (22*CurrentAmountHalls)-2
+        nexuses = self.structures(UnitTypeId.NEXUS).ready
+        if nexuses.exists:
+            if not self.already_pending(UnitTypeId.PROBE) and (CurrentProbes < MaxProbes):
+                if self.units(UnitTypeId.PROBE).can_afford:
+                    await self.do(random.choice(choices).train(UnitTypeId.PROBE))
+
+
+    async def build_assimilators(self):
+        if self.supply_used > 15 and not self.already_pending(UnitTypeId.ASSIMILATOR):
+            for town_halls1 in self.townhalls.ready:
+                vespenes = self.vespene_geyser.closer_than(10, town_halls1)
+                for vespene in vespenes:
+                    if not self.can_afford(UnitTypeId.ASSIMILATOR):
+                        break
+                    worker = self.select_build_worker(vespene.position)
+                    if worker is None:
+                        break
+                    if not self.units(UnitTypeId.ASSIMILATOR).closer_than(1.0, vespenes).exists:
+                        worker.build(UnitTypeId.ASSIMILATOR, vespene)
+
+
+    async def build_stargate(self):
+        123
+
+
+    async def build_pylons(self):
+        if self.supply_left < 3 and not self.already_pending(UnitTypeId.PYLON):
+            nexuses = self.townhalls.ready
+            if nexuses.exists:
+                if self.can_afford(UnitTypeId.PYLON):
+                    await self.build(UnitTypeId.PYLON, near = nexuses.first)
+
+    async def defend_nexus(self):
+
+    
+    async def attack_known_enemy_unit(self):
+
+
+    async def attack_known_enemy_structure(self):
+
+
+    async def expand(self):
+
+
+    async def do_nothing(self):
+
+
+    async def distribute_workers(self):
+
+    
+    async def scout(self):
+        self.expand_dis_dir = {}
+
+        for el in self.expansion_locations:
+            distance_to_enemy_start = el.distance_to(self.enemy_start_locations[0])
+            self.expand_dis_dir[distance_to_enemy_start] = el
+            
+        self.ordered_exp_distances = sorted(k for k in self.expand_dis_dir)
+
+        existing_ids = [unit.tag for unit in self.units]
+        to_be_removed = []
+        for noted_scout in self.scouts_and_spots:
+            if noted_scout not in existing_ids:
+                to_be_removed.append(noted_scout)
+        
+        for scout in to_be_removed:
+            del self.scouts_and_spots[scout]
+
+        if len(self.structures(UnitTypeId.ROBOTICSFACILITY).ready) == 0:
+            unit_type = UnitTypeId.PROBE
+            unit_limit = 1
+        else:
+            unit_type = UnitTypeId.OBSERVER
+            unit_limit = 3
+        
+        assign_scout = True
+
+        if unit_type == UnitTypeId.PROBE:
+            for unit in self.units(UnitTypeId.PROBE):
+                if unit.tag in self.scouts_and_spots:
+                    assign_scout = False
+
+
+        if assign_scout:
+            if len(self.units(unit_type).idle) > 0:
+                for obs in self.units(unit_type).idle[:unit_limit]:
+                    if obs.tag not in self.scouts_and_spots:
+                        for dist in self.ordered_exp_distances:
+                            try:
+                                location = next(value for key, value in self.expand_dis_dir.items() if key == dist)
+                                active_locations = [self.scouts_and_spots[k]for k in self.scouts_and_spots]
+
+                                if location not in active_locations:
+                                    if unit_type == UnitTypeId.PROBE:
+                                        for unit in self.units(UnitTypeId.PROBE):
+                                            if unit.tag in self.scouts_and_spots:
+                                                continue
+                                    await self.do(obs.move(location))
+                                    self.scouts_and_spots[obs.tag] = location
+                                    break
+                            except Exception as e:
+                                pass
 
 
     async def vision(self):
@@ -167,6 +317,34 @@ class AleeksBot(sc2.BotAI):
                 cv2.waitKey(1)
 
 
+    async def do_something(self):
+        if self.GameTime > self.do_something_after:
+            if self.use_model:
+                prediction = self.model.predict([self.flipped.reshape([-1, 176, 200, 3])])
+                choice = np.argmax(prediction[0])
+            else:
+                choice = random.randrange(0, 14)
+            try:
+                await self.choices[choice]()
+            except Exception as e:
+                print(str(e))
+            y = np.zeros(14)
+            y[choice] = 1
+            self.train_data.append([y, self.flipped])
+
+
+    async def chronoboost(self):
+        if self.townhalls.exists:
+            nexus = self.structures(UnitTypeId.NEXUS).ready.random
+            if not nexus.is_idle and not nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
+                nexuses = self.structures(UnitTypeId.NEXUS)
+                abilities = await self.get_available_abilities(nexuses)
+                for loop_nexus, abilities_nexus in zip(nexuses, abilities):
+                    if AbilityId.EFFECT_CHRONOBOOSTENERGYCOST in abilities_nexus:
+                        loop_nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
+                        break
+
+
     def random_location(self, location):
         x = location[0]
         y = location[1]
@@ -188,270 +366,19 @@ class AleeksBot(sc2.BotAI):
         return go_to
 
 
-    async def build_scout(self):
-        if len(self.units(UnitTypeId.OBSERVER)) < math.floor(self.GameTime/3):
-            for rf in self.structures(UnitTypeId.ROBOTICSFACILITY).ready.idle:
-                print(len(self.units(UnitTypeId.OBSERVER)), self.GameTime/3)
-                if self.can_afford(UnitTypeId.OBSERVER) and self.supply_left > 0:
-                    rf.train(UnitTypeId.OBSERVER)
-
-    
-    async def scout(self):
-        self.expand_dis_dir = {}
-
-        for el in self.expansion_locations:
-            distance_to_enemy_start = el.distance_to(self.enemy_start_locations[0])
-            self.expand_dis_dir[distance_to_enemy_start] = el
-            
-        self.ordered_exp_distances = sorted(k for k in self.expand_dis_dir)
-
-        existing_ids = [unit.tag for unit in self.units]
-        to_be_removed = []
-        for noted_scout in self.scouts_and_spots:
-            if noted_scout not in existing_ids:
-                to_be_removed.append(noted_scout)
-        
-        for scout in to_be_removed:
-            del self.scouts_and_spots[scout]
-
-        if len(self.structures(UnitTypeId.ROBOTICSFACILITY).ready) == 0:
-            unit_type = UnitTypeId.PROBE
-            unit_limit = 1
-        else:
-            unit_type = UnitTypeId.OBSERVER
-            unit_limit = 3
-        
-        assign_scout = True
-
-        if unit_type == UnitTypeId.PROBE:
-            for unit in self.units(UnitTypeId.PROBE):
-                if unit.tag in self.scouts_and_spots:
-                    assign_scout = False
-
-
-        if assign_scout:
-            if len(self.units(unit_type).idle) > 0:
-                for obs in self.units(unit_type).idle[:unit_limit]:
-                    if obs.tag not in self.scouts_and_spots:
-                        for dist in self.ordered_exp_distances:
-                            try:
-                                location = next(value for key, value in self.expand_dis_dir.items() if key == dist)
-                                active_locations = [self.scouts_and_spots[k]for k in self.scouts_and_spots]
-
-                                if location not in active_locations:
-                                    if unit_type == UnitTypeId.PROBE:
-                                        for unit in self.units(UnitTypeId.PROBE):
-                                            if unit.tag in self.scouts_and_spots:
-                                                continue
-                                    await self.do(obs.move(location))
-                                    self.scouts_and_spots[obs.tag] = location
-                                    break
-                            except Exception as e:
-                                pass
-
-
-    async def build_workers(self):
-        CurrentAmountHalls = self.townhalls.ready.amount
-        CurrentProbes = self.workers.amount
-        MaxProbes = (22*CurrentAmountHalls)-2
-        if not self.already_pending(UnitTypeId.PROBE) and (CurrentProbes < MaxProbes):
-            for town_halls in self.townhalls.idle:
-                if self.can_afford(UnitTypeId.PROBE):
-                    town_halls.train(UnitTypeId.PROBE)
-                else:
-                    break
-
-
-    async def build_pylons(self):
-        if self.supply_left < 3 and not self.already_pending(UnitTypeId.PYLON):
-            nexuses = self.townhalls.ready
-            if nexuses.exists:
-                if self.can_afford(UnitTypeId.PYLON):
-                    await self.build(UnitTypeId.PYLON, near = nexuses.first)
-
-
-    async def build_assimilators(self):
-        if self.supply_used > 15 and not self.already_pending(UnitTypeId.ASSIMILATOR):
-            for town_halls1 in self.townhalls.ready:
-                vespenes = self.vespene_geyser.closer_than(10, town_halls1)
-                for vespene in vespenes:
-                    if not self.can_afford(UnitTypeId.ASSIMILATOR):
-                        break
-                    worker = self.select_build_worker(vespene.position)
-                    if worker is None:
-                        break
-                    if not self.units(UnitTypeId.ASSIMILATOR).closer_than(1.0, vespenes).exists:
-                        worker.build(UnitTypeId.ASSIMILATOR, vespene)
-
-
-    async def expand(self):
-        try:
-            if self.townhalls.amount < self.GameTime/2 and self.can_afford(UnitTypeId.NEXUS):
-                await self.expand_now()
-        except Exception as e:
-            print(str(e))
-
-
-    async def build_gateway(self):
-        pylon1 = self.structures(UnitTypeId.PYLON).ready.random
-        if self.structures(UnitTypeId.GATEWAY).can_afford and not self.structures(UnitTypeId.GATEWAY).already_pending:
-            await self.build(UnitTypeId.GATEWAY, near = pylon1)
-
-
-    async def build_voidray(self):
-        stargates = self.structures(UnitTypeId.STARGATE).ready
-        if stargates.exists:
-            if self.units(UnitTypeId.VOIDRAY).can_afford:
-                await self.do(random.choice(stargates).train(UnitTypeId.VOIDRAY))
-
-
-    async def build_stalker(self):
-        pylon1 = self.structures(UnitTypeId.PYLON).ready.random
-        gateways = self.structures(UnitTypeId.GATEWAY).ready
-        cybernetics_core = self.structures(UnitTypeId.CYBERNETICSCORE).ready
-
-        if gateways.exists and cybernetics_core.exists:
-            if self.units(UnitTypeId.STALKER).can_afford:
-                awiat self.do(random.choice(gateways).train(UnitTypeId.STALKER))
-
-        if not.cybernetics_core.exists:
-            if self.structures(UnitTypeId.GATEWAY).ready.exists:
-                if self.structures(UnitTypeId.CYBERNETICSCORE).can_afford and not self.structures(UnitTypeId.CYBERNETICSCORE).already_pending:
-                    await self.build(UnitTypeId.CYBERNETICSCORE, near = pylon1)
-
-    async def build_workers(self):
-        nexuses = self.structures(UnitTypeId.NEXUS).ready
-        if nexuses.exists:
-            if self.units(UnitTypeId.PROBE).can_afford:
-                await self.do(random.choice(choices).train(UnitTypeId.PROBE))
-
-
-    async def build_buildings(self):
-        if self.structures(UnitTypeId.PYLON).ready.exists:
-            pylon1 = self.structures(UnitTypeId.PYLON).ready.random
-
-
-            if self.structures(UnitTypeId.GATEWAY).ready.exists and not self.structures(UnitTypeId.CYBERNETICSCORE):
-                if self.can_afford(UnitTypeId.CYBERNETICSCORE) and not self.already_pending(UnitTypeId.CYBERNETICSCORE):
-                    await self.build(UnitTypeId.CYBERNETICSCORE, near = pylon1)
-
-
-            elif len(self.structures(UnitTypeId.GATEWAY)) < 1:
-                if self.can_afford(UnitTypeId.GATEWAY) and not self.already_pending(UnitTypeId.GATEWAY):
-                    await self.build(UnitTypeId.GATEWAY, near = pylon1)
-
-
-            if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
-                if len(self.units(UnitTypeId.STARGATE)) < self.GameTime:
-                    if self.can_afford(UnitTypeId.STARGATE) and not self.already_pending(UnitTypeId.STARGATE):
-                        await self.build(UnitTypeId.STARGATE, near = pylon1)
-
-
-            if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
-                if len(self.structures(UnitTypeId.ROBOTICSFACILITY)) < 1:
-                    if self.can_afford(UnitTypeId.ROBOTICSFACILITY) and not self.already_pending(UnitTypeId.ROBOTICSFACILITY):
-                        await self.build(UnitTypeId.ROBOTICSFACILITY, near = pylon1)
-                        
-
-    async def build_zealot(self):
-        gateways = self.structures(UnitTypeId.GATEWAY).ready
-        if gateways.exists:
-            if self.unit(UnitTypeId.ZEALOT).can_afford:
-                await self.do(random.choice(gateways).train(UnitTypeId.ZEALOT))
-
-
-    async def build_stalker(self):
-
-
-    async def build_voidray(self):
-        if self.units(UnitTypeId.VOIDRAY).amount < 10:
-            for stargate in self.structures(UnitTypeId.STARGATE).ready.idle:
-                if self.can_afford(UnitTypeId.VOIDRAY) and self.supply_left > 0:
-                    stargate.train(UnitTypeId.VOIDRAY)
-
-
     def find_enemy(self, state):
         if len(self.enemy_units) > 0:
             return random.choice(self.enemy_units)
         elif len(self.enemy_structures) > 0:
             return random.choice(self.enemy_structures)
         else:
-            return self.enemy_start_locations[0]
+            return self.enemy_start_locations[0]     
 
-
-    async def attack(self):
-        if len(self.units(UnitTypeId.VOIDRAY).idle) > 0:
-
-            target = False
-
-
-            if self.GameTime > self.do_something_after:
-                if self.use_model:
-                    prediction = self.model.predict([self.flipped.reshape([-1, 176, 200, 3])])
-                    choice = np.argmax(prediction[0]) 
-                else:
-                    choice = random.randrange(0, 4)
+             
 
 
 
-                if choice == 0:
-                    #dont attack
-                    wait = random.randrange(7,100)/100
-                    self.do_something_after = self.GameTime + wait
-                
-
-                elif choice == 1:
-                    #attack closets units to our nexuses
-                    if len(self.enemy_units) > 0:
-                        target = self.enemy_units.closest_to(random.choice(self.structures(UnitTypeId.NEXUS)))
-
-
-                elif choice == 2:
-                    if len(self.enemy_structures) > 0:
-                        target = random.choice(self.enemy_structures)
-
-
-                elif choice == 3:
-                    #attack enemy startig location
-                    target = self.enemy_start_locations[0]
-
-
-                if target:
-                    for vr in self.units(UnitTypeId.VOIDRAY).idle:
-                        self.do(vr.attack(target))
-
-
-                y = np.zeros(4)
-                y[choice] = 1
-                print(y)
-                self.train_data.append([y, self.flipped])
-                
-              
-    async def chronoboost(self):
-        if self.townhalls.exists:
-            nexus = self.structures(UnitTypeId.NEXUS).ready.random
-            if not nexus.is_idle and not nexus.has_buff(BuffId.CHRONOBOOSTENERGYCOST):
-                nexuses = self.structures(UnitTypeId.NEXUS)
-                abilities = await self.get_available_abilities(nexuses)
-                for loop_nexus, abilities_nexus in zip(nexuses, abilities):
-                    if AbilityId.EFFECT_CHRONOBOOSTENERGYCOST in abilities_nexus:
-                        loop_nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
-                        break
-
-    async def do_something(self):
-        if self.GameTime > self.do_something_after:
-            if self.use_model:
-                prediction = self.model.predict([self.flipped.reshape([-1, 176, 200, 3])])
-                choice = np.argmax(prediction[0])
-            else:
-                choice = random.randrange(0, 14)
-            try:
-                await self.choices[choice]()
-            except Exception as e:
-                print(str(e))
-            y = np.zeros(14)
-            y[choice] = 1
-            self.train_data.append([y, self.flipped])
+   
                     
     
 map_pool = [
