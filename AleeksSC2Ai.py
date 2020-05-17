@@ -26,6 +26,7 @@ class AleeksBot(sc2.BotAI):
         self.raw_affects_selection = True
         self.train_data = []
         self.use_model = use_model
+        self.title = title
         self.do_something_after = 0
         self.scouts_and_spots = {}
         self.train_data = []
@@ -51,7 +52,6 @@ class AleeksBot(sc2.BotAI):
         }
 
 
-
     def on_end(self, game_result):
         print('--- on_end called ---')
         print(game_result, self.use_model)
@@ -74,6 +74,7 @@ class AleeksBot(sc2.BotAI):
         await self.vision()
         await self.do_something()
         await self.chronoboost()
+
 
     async def build_scout(self):
         if len(self.units(UnitTypeId.OBSERVER)) < math.floor(self.GameTime/3):
@@ -130,21 +131,24 @@ class AleeksBot(sc2.BotAI):
 
 
     async def build_assimilators(self):
-        if self.supply_used > 15 and not self.already_pending(UnitTypeId.ASSIMILATOR):
-            for town_halls1 in self.townhalls.ready:
-                vespenes = self.vespene_geyser.closer_than(10, town_halls1)
-                for vespene in vespenes:
-                    if not self.can_afford(UnitTypeId.ASSIMILATOR):
-                        break
-                    worker = self.select_build_worker(vespene.position)
-                    if worker is None:
-                        break
-                    if not self.units(UnitTypeId.ASSIMILATOR).closer_than(1.0, vespenes).exists:
-                        worker.build(UnitTypeId.ASSIMILATOR, vespene)
+        for town_halls1 in self.townhalls.ready:
+            vespenes = self.vespene_geyser.closer_than(10, town_halls1)
+            for vespene in vespenes:
+                if not self.can_afford(UnitTypeId.ASSIMILATOR):
+                    break
+                worker = self.select_build_worker(vespene.position)
+                if worker is None:
+                    break
+                if not self.units(UnitTypeId.ASSIMILATOR).closer_than(1.0, vespenes).exists:
+                    worker.build(UnitTypeId.ASSIMILATOR, vespene)
 
 
     async def build_stargate(self):
-        123
+        if self.structures(UnitTypeId.PYLON).ready.exists:
+            pylon1 = self.structures(UnitTypeId.PYLON).ready.random
+            if self.structures(UnitTypeId.CYBERNETICSCORE).ready.exists:
+                if self.structures(UnitTypeId.STARGATE).can_afford and not self.structures(UnitTypeId.STARGATE).already_pending:
+                    await self.build(UnitTypeId.STARGATE, near=pylon1)
 
 
     async def build_pylons(self):
@@ -152,7 +156,7 @@ class AleeksBot(sc2.BotAI):
             nexuses = self.townhalls.ready
             if nexuses.exists:
                 if self.can_afford(UnitTypeId.PYLON):
-                    await self.build(UnitTypeId.PYLON, near = nexuses.first)
+                    await self.build(UnitTypeId.PYLON, near = self.structures(UnitTypeId.NEXUS).first.position.towards(self.game_info.map.center, 5))
 
     async def defend_nexus(self):
 
@@ -164,9 +168,51 @@ class AleeksBot(sc2.BotAI):
 
 
     async def expand(self):
+        try:
+            if self.structures(UnitTypeId.NEXUS).can_afford:
+                await self.expand_now()
+            except Exception as e:
+                print(str(e))
 
 
     async def do_nothing(self):
+        wait = random.randrange(7, 100)/100
+        self.do_something_after = self.GameTime + wait
+
+
+    async def defend_nexus(self):
+        if len(self.enemy_units) > 0:
+            target = self.enemy_units.closest_to(random.choice(self.structures(UnitTypeId.NEXUS)))
+            for u in self.units(UnitTypeId.VOIDRAY).idle:
+                await self.do(u.attack(target))
+            for u in self.units(UnitTypeId.STALKER).idle:
+                await self.do(u.attack(target))
+            for u in self.units(UnitTypeId.ZEALOT).idle:
+                await self.do(u.attack(target))
+
+
+    async def attack_known_enemy_structure(self):
+        if len(self.enemy_structures) > 0:
+            target = random.choice(self.enemy_structures)
+            for u in self.units(UnitTypeId.VOIDRAY).idle:
+                await self.do(u.attack(target))
+            for u in self.units(UnitTypeId.STALKER).idle:
+                await self.do(u.attack(target))
+            for u in self.units(UnitTypeId.ZEALOT).idle:
+                await self.do(u.attack(target))
+    
+
+    async def attack_known_enemy_unit(self):
+        if len(self.enemy_units) > 0:
+            target = self.enemy_units.closest_to(random.choice(self.structures(UnitTypeId.NEXUS)))
+            for u in self.units(UnitTypeId.VOIDRAY).idle:
+                await self.do(u.attack(target))
+            for u in self.units(UnitTypeId.STALKER).idle:
+                await self.do(u.attack(target))
+            for u in self.units(UnitTypeId.ZEALOT).idle:
+                await self.do(u.attack(target))
+
+        pass            
 
 
     async def distribute_workers(self):
@@ -310,10 +356,10 @@ class AleeksBot(sc2.BotAI):
 
         if not HEADLESS:
             if self.use_model:
-                cv2.imshow('Model Intel', resized)
+                cv2.imshow(str(self.title), resized)
                 cv2.waitKey(1)
             else:
-                cv2.imshow('Random Intel', resized)
+                cv2.imshow(str(self.title), resized)
                 cv2.waitKey(1)
 
 
@@ -375,12 +421,6 @@ class AleeksBot(sc2.BotAI):
             return self.enemy_start_locations[0]     
 
              
-
-
-
-   
-                    
-    
 map_pool = [
     "AbyssalReefLE", "BelShirVestigeLE",
     "CactusValleyLE", "ProximaStationLE", 
