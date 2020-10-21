@@ -1,3 +1,3 @@
 # AleeksAI_SC2
-Learning AI for starcraft2 written in Python and BurnySC2 API
+Starcraft2 Ai written in Python and BurnySC2 API
 
