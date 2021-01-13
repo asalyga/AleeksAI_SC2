@@ -31,7 +31,6 @@ class AleeksBot(sc2.BotAI):
         self.do_something_after = 0
         self.scouts_and_spots = {}
 
-
         self.choices = {
             0: self.build_scout,
             1: self.build_zealot,
@@ -54,12 +53,11 @@ class AleeksBot(sc2.BotAI):
             print("Using model")
             self.model = keras.models.load_model("TrainedData")
 
-
     def on_end(self, game_result):
         print('--- on_end called ---')
         print(game_result, self.use_model)
 
-        #if game_result == game_result.Victory:
+        # if game_result == game_result.Victory:
         #    np.save("train_data/{}.npy".format(str(int(time.time()))), np.array(self.train_data))
 
         with open("gameout-random-vs-medium.txt", "a") as f:
@@ -67,7 +65,6 @@ class AleeksBot(sc2.BotAI):
                 f.write("Model {}\n".format(game_result))
             else:
                 f.write("Random {}\n".format(game_result))
-
 
     async def on_step(self, interation):
 
@@ -78,7 +75,6 @@ class AleeksBot(sc2.BotAI):
         await self.vision()
         await self.do_something()
         await self.chronoboost()
-
 
     def random_location(self, location):
         x = location[0]
@@ -102,7 +98,6 @@ class AleeksBot(sc2.BotAI):
 
     async def scout(self):
         self.expand_dis_dir = {}
-
         for el in self.expansion_locations:
             distance_to_enemy_start = el.distance_to(self.enemy_start_locations[0])
             self.expand_dis_dir[distance_to_enemy_start] = el
@@ -246,7 +241,6 @@ class AleeksBot(sc2.BotAI):
             return random.choice(self.enemy_structures)
         else:
             return self.enemy_start_locations[0]
-
 
     async def build_scout(self):
         if len(self.units(UnitTypeId.OBSERVER)) < math.floor(self.GameTime / 3):
@@ -396,13 +390,8 @@ class AleeksBot(sc2.BotAI):
             for u in self.units(UnitTypeId.ZEALOT).idle:
                 await self.do(u.attack(target))
 
-
     async def distribute_workers(self):
         pass
-
-    
-
-    
 
     async def do_something(self):
         if self.GameTime > self.do_something_after:
@@ -429,10 +418,6 @@ class AleeksBot(sc2.BotAI):
                     if AbilityId.EFFECT_CHRONOBOOSTENERGYCOST in abilities_nexus:
                         loop_nexus(AbilityId.EFFECT_CHRONOBOOSTENERGYCOST, nexus)
                         break
-
-    
-
-    
 
 
 map_pool = [

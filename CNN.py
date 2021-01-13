@@ -7,7 +7,6 @@ import numpy as np
 import os
 import random
 
-
 model = Sequential()
 
 model.add(Conv2D(32, (3, 3), padding='same',
@@ -75,13 +74,13 @@ for i in range(hm_epochs):
     random.shuffle(all_files)
 
     while not_maximum:
-        print("WORKING ON {}:{}".format(current, current+increment))
+        print("WORKING ON {}:{}".format(current, current + increment))
         no_attacks = []
         attack_closest_to_nexus = []
         attack_enemy_structures = []
         attack_enemy_start = []
 
-        for file in all_files[current:current+increment]:
+        for file in all_files[current:current + increment]:
             full_path = os.path.join(train_data_dir, file)
             data = np.load(full_path, allow_pickle=True)
             data = list(data)
